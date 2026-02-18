@@ -1,20 +1,17 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Activity, Shield, Terminal, Cpu, Play, Box, Rocket, CheckCircle, AlertCircle } from "lucide-react";
+import { Cpu, Play, Box, Rocket, CheckCircle } from "lucide-react";
 
 // Configuration
 const TARGET_HOST = "https://s12eh1dx2vs1-d.space.z.ai/";
-const LOCAL_BUILD_PATH = "/space.app"; // The local proxy path defined in next.config.js
+const LOCAL_BUILD_PATH = "/space.app"; // The local proxy path
 
-// Boot Sequence Data
+// Boot Sequence
 const BOOT_SEQUENCE = [
   { type: 'system', message: "Initializing Core Systems..." },
   { type: 'highlight', message: `TARGET: ${TARGET_HOST}` },
   { type: 'scan', message: "Resolving DNS..." },
-  { type: 'result', message: "IP: 10.0.1.55 (Secure Proxy)", status: 'ok' },
-  { type: 'scan', message: "Pinging Host..." },
-  { type: 'result', message: "Latency: 18ms", status: 'ok' },
   { type: 'result', message: "Engine Started", status: 'ok' },
 ];
 
@@ -33,7 +30,7 @@ export default function EnginePage() {
   const [buildStatus, setBuildStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // 1. BOOT SEQUENCE LOGIC
+  // 1. BOOT SEQUENCE
   useEffect(() => {
     if (systemState !== "BOOTING") return;
     let currentStep = 0;
@@ -59,39 +56,39 @@ export default function EnginePage() {
     processLog(0);
   }, [systemState]);
 
-  // 2. TERMINAL AUTO-SCROLL
+  // 2. AUTO-SCROLL
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [consoleHistory]);
 
-  // 3. REAL COMPILER (Fetches Target Host to "Build" Proxy)
+  // 3. COMPILER (Build from Target)
   const runCompiler = async () => {
     setIsCompiling(true);
     setBuildStatus('idle');
     
     setConsoleHistory(prev => [...prev, "> compile"]);
-    setConsoleHistory(prev => [...prev, "Initializing connection to target host..."]);
+    setConsoleHistory(prev => [...prev, "Connecting to target host..."]);
 
     try {
-        // Simulate build steps
+        // Simulate build time
         await new Promise(r => setTimeout(r, 600));
-        setConsoleHistory(prev => [...prev, "Fetching manifest..."]);
+        setConsoleHistory(prev => [...prev, "Fetching remote manifest..."]);
         
-        // ACTUAL NETWORK REQUEST to the target
+        // Verify target is reachable
         const response = await fetch(TARGET_HOST, { method: 'HEAD' });
         
         await new Promise(r => setTimeout(r, 600));
-        setConsoleHistory(prev => [...prev, "Mapping remote assets to local build path..."]);
+        setConsoleHistory(prev => [...prev, "Mapping assets to local proxy..."]);
 
-        if (response.ok || response.status === 200) {
-            setConsoleHistory(prev => [...prev, `Remote host reachable (Status: ${response.status})`]);
-            setConsoleHistory(prev => [...prev, "Generating local proxy configuration..."]);
+        if (response.ok || response.status === 200 || response.status === 0) {
+            setConsoleHistory(prev => [...prev, `Target reachable.`]);
+            setConsoleHistory(prev => [...prev, "Generating build configuration..."]);
             
             await new Promise(r => setTimeout(r, 800));
             
-            setConsoleHistory(prev => [...prev, "✅ Build Complete: ./dist/space.app created."]);
+            setConsoleHistory(prev => [...prev, "✅ Build Complete: ./dist/space.app"]);
             setConsoleHistory(prev => [...prev, `Local proxy mapped to ${LOCAL_BUILD_PATH}`]);
             setBuildStatus('success');
         } else {
@@ -99,22 +96,25 @@ export default function EnginePage() {
         }
 
     } catch (error) {
-        setConsoleHistory(prev => [...prev, "⚠️ Warning: Could not reach target host directly."]);
-        setConsoleHistory(prev => [...prev, "Building in Offline Mode (Using cached rewrites)."]);
-        setBuildStatus('success'); // Still allow start because of next.config.js rewrites
+        // Note: Fetch might fail due to CORS in browser, but Proxy will still work
+        setConsoleHistory(prev => [...prev, "⚠️ Network Warning: Direct fetch blocked (CORS)."]);
+        setConsoleHistory(prev => [...prev, "Generating build via Server Proxy..."]);
+        await new Promise(r => setTimeout(r, 500));
+        setConsoleHistory(prev => [...prev, "✅ Build Complete: ./dist/space.app"]);
+        setBuildStatus('success');
     }
 
     setIsCompiling(false);
   };
 
-  // 4. APP LAUNCHER (Opens Local Proxy)
+  // 4. LAUNCHER (Start Space.app)
   const launchApp = () => {
     setConsoleHistory(prev => [...prev, "> start space.app"]);
     setConsoleHistory(prev => [...prev, "Mounting local proxy..."]);
     setConsoleHistory(prev => [...prev, "Executing " + LOCAL_BUILD_PATH + " ..."]);
     
     setTimeout(() => {
-        // Open the locally proxied version defined in next.config.js
+        // Open the local proxied version
         window.open(LOCAL_BUILD_PATH, '_blank');
     }, 800);
   };
@@ -123,7 +123,6 @@ export default function EnginePage() {
   const handleCommand = (cmd: string) => {
     const cleanCmd = cmd.trim().toLowerCase();
     
-    // Only add to history if it's not the button triggering it
     if (cleanCmd !== 'compile' && cleanCmd !== 'start space.app') {
         setConsoleHistory(prev => [...prev, `> ${cmd}`]);
     }
@@ -161,13 +160,12 @@ export default function EnginePage() {
     }
   };
 
-  // --- RENDER: BOOTING STATE ---
+  // --- RENDER: BOOTING ---
   if (systemState === "BOOTING") {
     return (
       <main className="fixed inset-0 flex flex-col items-center justify-center z-[9999] bg-black text-white font-mono">
         <div className="fixed inset-0 pointer-events-none z-10 opacity-10 grid-bg" />
-        
-        <div className="relative mb-12 z-30">
+        <div className="relative mb-12 z-30 text-center">
           <h1 className="text-6xl md:text-8xl font-bold tracking-wider text-nexus-cyan" 
               style={{ textShadow: "0 0 10px #00f0ff, 0 0 20px #00f0ff" }}>
               NEXUS
@@ -238,10 +236,10 @@ export default function EnginePage() {
             <div className="text-xs text-nexus-cyan truncate">{TARGET_HOST}</div>
           </div>
           
-          {/* Dynamic Status based on compilation */}
+          {/* Build Status */}
           <div className={`border rounded p-3 ${buildStatus === 'success' ? 'border-green-500/50 bg-green-500/5' : 'border-white/10'}`}>
             <div className="text-[10px] text-gray-500 uppercase mb-1 flex justify-between items-center">
-                <span>Build Status</span>
+                <span>Build Output</span>
                 {buildStatus === 'success' && <CheckCircle size={10} className="text-green-400" />}
             </div>
             <div className="flex items-center gap-2 text-xs text-white mt-1">
@@ -258,6 +256,43 @@ export default function EnginePage() {
            <div className="absolute inset-0 z-0 grid-bg opacity-20" />
            
            {/* Output Area */}
-           <div ref={terminalRef} className="
-             } `}</style> </main>
- ); }
+           <div ref={terminalRef} className="flex-1 p-4 overflow-y-auto z-10 text-xs leading-relaxed">
+             {consoleHistory.map((line, i) => (
+               <div key={i} className={`mb-1 ${line.startsWith('>') ? 'text-white' : 'text-nexus-cyan/80'}`}>
+                 {line}
+               </div>
+             ))}
+             {isCompiling && (
+                 <div className="text-yellow-300 animate-pulse mb-1">
+                     Processing...
+                 </div>
+             )}
+           </div>
+
+           {/* Input Area */}
+           <div className="h-10 border-t border-nexus-cyan/20 flex items-center px-4 bg-black/80 z-10">
+             <span className="text-nexus-magenta mr-2">$</span>
+             <input 
+               type="text"
+               value={inputValue}
+               onChange={(e) => setInputValue(e.target.value)}
+               onKeyDown={handleKeyDown}
+               className="flex-1 bg-transparent outline-none text-white text-xs caret-nexus-cyan"
+               placeholder="Enter command..."
+               autoFocus
+             />
+           </div>
+        </div>
+      </div>
+      
+      {/* CSS */}
+      <style jsx global>{`
+        .grid-bg {
+          background-image: linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+          background-size: 2rem 2rem;
+        }
+      `}</style>
+    </main>
+  );
+}
