@@ -1,195 +1,253 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Activity, Shield, Server, ExternalLink } from "lucide-react";
+import React, { useState } from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
-// Configuration: The target URL to "scan" and link to
-const TARGET_URL = "https://s12eh1dx2vs1-d.space.z.ai/";
+// --- FIXED SCANNING ENGINE ---
+const ScanEngine = {
+    // Proxy 1: AllOrigins (JSON Method)
+    fetch1: async (url: string) => {
+        const target = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const res = await fetch(target);
+        const data = await res.json();
+        if (data.contents) return data.contents;
+        throw new Error("Proxy 1 failed");
+    },
 
-// The sequence of diagnostic steps
-const BOOT_SEQUENCE = [
-  { type: 'system', message: "Initializing Core Systems..." },
-  { type: 'highlight', message: `TARGET: ${TARGET_URL}` },
-  { type: 'scan', message: "Resolving DNS..." },
-  { type: 'result', message: "IP: 10.0.1.55 (Secure Proxy)", status: 'ok' },
-  { type: 'scan', message: "Pinging Host..." },
-  { type: 'result', message: "Latency: 18ms", status: 'ok' },
-  { type: 'scan', message: "Establishing TLS 1.3..." },
-  { type: 'result', message: "Cipher: AES-256-GCM", status: 'ok' },
-  { type: 'scan', message: "Linking Build Artifacts..." },
-  { type: 'result', message: "Found: /_next/static/", status: 'ok' },
-  { type: 'result', message: "Found: /app/", status: 'ok' },
-  { type: 'system', message: "Connection Secured", status: 'ok' },
-];
+    // Proxy 2: CodeTabs
+    fetch2: async (url: string) => {
+        const target = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
+        const res = await fetch(target);
+        return await res.text();
+    },
 
-export default function DashboardPage() {
-  const [systemState, setSystemState] = useState<"BOOTING" | "ONLINE">("BOOTING");
-  const [logs, setLogs] = useState<string[]>([]);
-  const [progress, setProgress] = useState(0);
+    // Proxy 3: CorsProxy
+    fetch3: async (url: string) => {
+        const target = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+        const res = await fetch(target);
+        return await res.text();
+    },
 
-  useEffect(() => {
-    if (systemState !== "BOOTING") return;
+    run: async (url: string, log: (msg: string) => void) => {
+        let target = url;
+        if (!target.startsWith('http')) target = 'https://' + target;
 
-    let currentStep = 0;
-    const totalSteps = BOOT_SEQUENCE.length;
-    
-    const processLog = (index: number) => {
-      if (index >= totalSteps) {
-        // Boot complete -> Switch to Online Dashboard
-        setTimeout(() => {
-          setProgress(100);
-          setTimeout(() => setSystemState("ONLINE"), 800);
-        }, 500);
-        return;
-      }
+        // Try Proxy 1
+        try {
+            log("Engine: Trying Primary Proxy (JSON)...");
+            const html = await ScanEngine.fetch1(target);
+            log("Engine: Primary Success!");
+            return html;
+        } catch (e) { log("Engine: Primary failed."); }
 
-      const step = BOOT_SEQUENCE[index];
-      const delay = step.type === 'scan' ? 600 : 300;
+        // Try Proxy 2
+        try {
+            log("Engine: Trying Secondary Proxy...");
+            const html = await ScanEngine.fetch2(target);
+            log("Engine: Secondary Success!");
+            return html;
+        } catch (e) { log("Engine: Secondary failed."); }
 
-      // Update Log
-      setLogs(prev => [...prev, `▸ ${step.message}`]);
-      
-      // Update Progress
-      const currentProgress = ((index + 1) / totalSteps) * 100;
-      setProgress(currentProgress);
+        // Try Proxy 3
+        try {
+            log("Engine: Trying Tertiary Proxy...");
+            const html = await ScanEngine.fetch3(target);
+            log("Engine: Tertiary Success!");
+            return html;
+        } catch (e) { log("Engine: All proxies failed."); }
 
-      setTimeout(() => processLog(index + 1), delay);
+        return null;
+    }
+};
+
+// --- HELPER: PROCESS HTML ---
+const processHtml = (html: string, url: string) => {
+    const base = `<base href="${url}">`;
+    if (html.includes('<head>')) {
+        return html.replace('<head>', `<head>${base}`);
+    }
+    return base + html;
+};
+
+// --- MAIN APP COMPONENT ---
+export default function Home() {
+    const [url, setUrl] = useState('');
+    const [code, setCode] = useState('<!-- Scan a link to begin -->');
+    const [logs, setLogs] = useState(["System Ready."]);
+    const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
+    const [showManual, setShowManual] = useState(false);
+    const [manualText, setManualText] = useState('');
+
+    const log = (msg: string) => setLogs(prev => [...prev.slice(-20), `> ${msg}`]);
+
+    const handleScan = async () => {
+        if (!url) return log("Error: No URL.");
+        setLoading(true);
+        log(`Target: ${url}`);
+        
+        const rawHtml = await ScanEngine.run(url, log);
+        
+        if (rawHtml) {
+            const processed = processHtml(rawHtml, url);
+            setCode(processed);
+            log("Success: Code loaded.");
+            setActiveTab('preview');
+        } else {
+            log("Error: Network blocked.");
+            log("Solution: Use MANUAL PASTE.");
+        }
+        
+        setLoading(false);
     };
 
-    // Start sequence
-    processLog(0);
+    const downloadSingle = () => {
+        const blob = new Blob([code], { type: 'text/html' });
+        saveAs(blob, "nexus_scan.html");
+        log("Downloaded HTML.");
+    };
 
-  }, [systemState]);
+    const downloadZip = async () => {
+        log("Building ZIP...");
+        const zip = new JSZip();
+        zip.file("index.html", code);
+        const content = await zip.generateAsync({ type: "blob" });
+        saveAs(content, "nexus_project.zip");
+        log("Downloaded ZIP.");
+    };
 
-  // --- RENDER: ONLINE STATE (DASHBOARD) ---
-  if (systemState === "ONLINE") {
+    const applyManual = () => {
+        setCode(manualText);
+        setShowManual(false);
+        log("Manual code applied.");
+        setActiveTab('edit');
+    };
+
     return (
-      <main className="fixed inset-0 flex flex-col items-center justify-center p-4 bg-nexus-dark text-white overflow-hidden">
-        <div className="absolute inset-0 z-0 grid-bg opacity-40" />
-        <div className="relative z-10 w-full max-w-lg">
-          
-          {/* Status Badge */}
-          <div className="flex justify-center mb-8">
-            <div className="flex items-center gap-2 px-4 py-1.5 border border-green-500/50 rounded-full bg-green-500/10 shadow-[0_0_15px_rgba(0,255,0,0.2)] animate-pulse-slow">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              <span className="text-xs font-bold text-green-400 tracking-widest uppercase">
-                System Online
-              </span>
-            </div>
-          </div>
+        <main className="h-screen w-screen flex flex-col bg-[#050505] text-gray-200 font-mono">
+            {/* Header */}
+            <header className="h-14 border-b border-gray-800 flex items-center px-6 shrink-0 bg-[#0a0a0a]">
+                <h1 className="text-lg font-bold text-cyan-400 tracking-widest mr-6">NEXUS SCAN</h1>
+                
+                <div className="flex-1 flex items-center bg-[#111] rounded border border-gray-800 px-3">
+                    <span className="text-pink-500 text-xs mr-2">LINK</span>
+                    <input 
+                        type="text"
+                        value={url}
+                        onChange={e => setUrl(e.target.value)}
+                        placeholder="https://site.com"
+                        className="flex-1 bg-transparent text-sm text-white outline-none py-2"
+                        onKeyDown={e => e.key === 'Enter' && handleScan()}
+                    />
+                </div>
 
-          {/* Connection Card */}
-          <div className="relative p-8 border border-nexus-cyan/30 rounded-xl bg-[#00101a]/80 backdrop-blur-md shadow-[0_0_30px_rgba(0,240,255,0.15)]">
-            <div className="text-center mb-6">
-              <h1 className="text-2xl font-bold text-white mb-2">Connection Established</h1>
-              <div className="text-sm text-gray-400 flex items-center justify-center gap-2">
-                <span>Target:</span>
-                <a 
-                  href={TARGET_URL} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-nexus-cyan hover:underline flex items-center gap-1"
+                <button 
+                    onClick={handleScan}
+                    disabled={loading}
+                    className="ml-4 px-4 py-2 bg-cyan-900/50 hover:bg-cyan-800/50 border border-cyan-500/50 text-cyan-400 rounded text-xs"
                 >
-                  {TARGET_URL}
-                  <ExternalLink size={12} />
-                </a>
-              </div>
-            </div>
+                    {loading ? "SCANNING..." : "SCAN"}
+                </button>
+                
+                <button 
+                    onClick={() => setShowManual(true)}
+                    className="ml-2 px-4 py-2 bg-pink-900/30 hover:bg-pink-800/30 border border-pink-500/30 text-pink-400 rounded text-xs"
+                >
+                    MANUAL
+                </button>
+            </header>
 
-            <div className="w-full h-px bg-gradient-to-r from-transparent via-nexus-cyan/30 to-transparent mb-6" />
+            {/* Main Content */}
+            <div className="flex-1 flex overflow-hidden">
+                {/* Sidebar */}
+                <aside className="w-64 border-r border-gray-800 flex flex-col bg-[#020202]">
+                    <div className="p-3 border-b border-gray-800 text-xs text-gray-500 uppercase">
+                        Console
+                    </div>
+                    <div className="flex-1 p-2 overflow-y-auto text-xs leading-relaxed">
+                        {logs.map((l, i) => <div key={i} className="text-gray-400 mb-1">{l}</div>)}
+                    </div>
+                    
+                    <div className="p-3 border-t border-gray-800 space-y-2">
+                        <button onClick={downloadSingle} className="w-full text-left text-xs px-2 py-1 hover:bg-white/5 rounded text-gray-300">
+                            ⬇ Download HTML
+                        </button>
+                        <button onClick={downloadZip} className="w-full text-left text-xs px-2 py-1 hover:bg-white/5 rounded text-gray-300">
+                            📦 Download ZIP
+                        </button>
+                    </div>
+                </aside>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 border border-white/10 rounded-lg bg-black/20">
-                <div className="flex items-center gap-2 text-gray-400 mb-2">
-                  <Activity size={14} />
-                  <span className="text-xs uppercase tracking-wider">Latency</span>
+                {/* Editor Area */}
+                <div className="flex-1 flex flex-col bg-[#050505]">
+                    {/* Tabs */}
+                    <div className="h-10 border-b border-gray-800 flex items-center px-4 space-x-4 bg-[#000] shrink-0">
+                        <button 
+                            onClick={() => setActiveTab('edit')}
+                            className={`text-xs px-2 py-2 ${activeTab === 'edit' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-600'}`}
+                        >
+                            EDIT CODE
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('preview')}
+                            className={`text-xs px-2 py-2 ${activeTab === 'preview' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-600'}`}
+                        >
+                            PREVIEW
+                        </button>
+                    </div>
+
+                    {/* View */}
+                    <div className="flex-1 relative overflow-hidden">
+                        {activeTab === 'edit' ? (
+                            <textarea 
+                                className="w-full h-full p-4 bg-[#080808] text-cyan-400 outline-none resize-none"
+                                value={code}
+                                onChange={(e) => setCode(e.target.value)}
+                                spellCheck="false"
+                            />
+                        ) : (
+                            <iframe 
+                                srcDoc={code}
+                                title="Preview"
+                                className="w-full h-full bg-white"
+                                sandbox="allow-scripts allow-same-origin"
+                            />
+                        )}
+                    </div>
                 </div>
-                <div className="text-2xl font-bold text-white">18<span className="text-sm ml-1 text-gray-500">ms</span></div>
-              </div>
-              <div className="p-4 border border-white/10 rounded-lg bg-black/20">
-                <div className="flex items-center gap-2 text-gray-400 mb-2">
-                  <Shield size={14} />
-                  <span className="text-xs uppercase tracking-wider">Security</span>
-                </div>
-                <div className="text-2xl font-bold text-green-400">TLS 1.3</div>
-              </div>
             </div>
-            
-            <div className="mt-6 pt-4 border-t border-white/5 flex justify-between text-xs text-gray-600">
-              <span>NEXUS OS v9.0</span>
-              <span>PROTOCOL: SECURE</span>
-            </div>
-          </div>
 
-          <div className="mt-8 text-center text-xs text-gray-600">
-            <Server className="inline w-3 h-3 mr-1" />
-            Node Active: Primary Cluster
-          </div>
-        </div>
-      </main>
+            {/* Manual Modal */}
+            {showManual && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-8">
+                    <div className="bg-[#111] border border-cyan-900 rounded-lg w-full max-w-3xl flex flex-col max-h-[80vh]">
+                        <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                            <h3 className="text-cyan-400 font-bold">Manual Paste Mode</h3>
+                            <button onClick={() => setShowManual(false)} className="text-gray-500 hover:text-white text-xl">&times;</button>
+                        </div>
+                        <div className="p-4 text-xs text-gray-400">
+                            1. Open the link in your browser.<br/>
+                            2. Right-click and "View Page Source".<br/>
+                            3. Copy everything and paste below.
+                        </div>
+                        <textarea 
+                            className="flex-1 w-full p-4 bg-[#050505] text-white outline-none"
+                            placeholder="Paste HTML code here..."
+                            value={manualText}
+                            onChange={(e) => setManualText(e.target.value)}
+                        />
+                        <div className="p-4 border-t border-gray-800 flex justify-end">
+                            <button 
+                                onClick={applyManual}
+                                className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-bold"
+                            >
+                                Apply Code
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </main>
     );
-  }
-
-  // --- RENDER: BOOTING STATE (SCAN) ---
-  return (
-    <main className="fixed inset-0 flex flex-col items-center justify-center z-[9999] bg-nexus-dark text-white">
-      {/* Background Grid */}
-      <div className="fixed inset-0 pointer-events-none z-10 opacity-10 grid-bg" />
-      
-      {/* Logo */}
-      <div className="relative mb-12 z-30">
-        <h1 className="text-6xl md:text-8xl font-bold tracking-wider transition-all duration-100 font-mono text-nexus-cyan" 
-            style={{ textShadow: "0 0 10px #00f0ff, 0 0 20px #00f0ff, 0 0 40px #00f0ff" }}>
-            NEXUS
-        </h1>
-        <div className="text-center mt-2">
-            <span className="text-sm tracking-[0.3em] animate-pulse text-nexus-magenta">
-                DIAGNOSTIC MODE
-            </span>
-        </div>
-        <div className="absolute -inset-10 border rounded-lg pointer-events-none animate-pulse border-nexus-cyan/30" />
-      </div>
-
-      {/* Scan Log */}
-      <div className="w-80 md:w-96 space-y-4 z-30">
-        <div className="h-44 overflow-hidden rounded-lg p-3 font-mono text-xs backdrop-blur-sm bg-[#000a14]/90 border border-nexus-cyan/30 shadow-[0_0_20px_rgba(0,240,255,0.1)]">
-             {logs.map((log, i) => (
-                 <div key={i} className="flex items-center gap-2 mb-1 text-nexus-cyan">
-                    <span>{log}</span>
-                 </div>
-             ))}
-             <div className="cursor-blink" style={{ width: 6, height: 10, background: '#00f0ff', display: 'inline-block' }}></div>
-        </div>
-
-        <div className="space-y-2">
-            <div className="h-2 rounded-full overflow-hidden bg-nexus-cyan/10 shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]">
-                <div className="h-full rounded-full transition-all duration-200 relative overflow-hidden bg-gradient-to-r from-nexus-cyan to-nexus-magenta shadow-[0_0_15px_#00f0ff]" 
-                     style={{ width: `${progress}%` }}>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
-                </div>
-            </div>
-            <div className="text-center text-xs font-mono text-gray-500">
-                {Math.round(progress)}% Complete
-            </div>
-        </div>
-      </div>
-
-      {/* CSS Animations */}
-      <style jsx global>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-shimmer { animation: shimmer 2s infinite; }
-        .grid-bg {
-          background-image: linear-gradient(rgba(0, 240, 255, 0.1) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(0, 240, 255, 0.1) 1px, transparent 1px);
-          background-size: 50px 50px;
-        }
-      `}</style>
-    </main>
-  );
 }
