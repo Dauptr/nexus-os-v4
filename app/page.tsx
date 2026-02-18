@@ -5,14 +5,19 @@ import { Cpu, Play, Box, Rocket, CheckCircle } from "lucide-react";
 
 // Configuration
 const TARGET_HOST = "https://s12eh1dx2vs1-d.space.z.ai/";
-const LOCAL_BUILD_PATH = "/space.app"; // The local proxy path
+const LOCAL_BUILD_PATH = "/space.app"; 
 
-// Boot Sequence
+// Expanded Boot Sequence for better effect
 const BOOT_SEQUENCE = [
-  { type: 'system', message: "Initializing Core Systems..." },
+  { type: 'system', message: "BIOS Initialization..." },
+  { type: 'system', message: "Memory Test: 32GB OK" },
   { type: 'highlight', message: `TARGET: ${TARGET_HOST}` },
   { type: 'scan', message: "Resolving DNS..." },
-  { type: 'result', message: "Engine Started", status: 'ok' },
+  { type: 'result', message: "IP: 10.0.1.55 (Secure Proxy)", status: 'ok' },
+  { type: 'scan', message: "Checking Network Latency..." },
+  { type: 'result', message: "Latency: 18ms", status: 'ok' },
+  { type: 'scan', message: "Loading Kernel Modules..." },
+  { type: 'result', message: "Engine Core Ready", status: 'ok' },
 ];
 
 export default function EnginePage() {
@@ -30,30 +35,51 @@ export default function EnginePage() {
   const [buildStatus, setBuildStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // 1. BOOT SEQUENCE
+  // 1. BOOT SEQUENCE LOGIC (Fixed)
   useEffect(() => {
     if (systemState !== "BOOTING") return;
+
+    let isMounted = true;
     let currentStep = 0;
     const totalSteps = BOOT_SEQUENCE.length;
     
     const processLog = (index: number) => {
+      if (!isMounted) return;
+
       if (index >= totalSteps) {
+        // Boot complete
         setTimeout(() => {
-          setProgress(100);
-          setTimeout(() => setSystemState("ONLINE"), 800);
+          if(isMounted) {
+            setProgress(100);
+            setTimeout(() => {
+              if(isMounted) setSystemState("ONLINE");
+            }, 800);
+          }
         }, 500);
         return;
       }
 
       const step = BOOT_SEQUENCE[index];
-      const delay = step.type === 'scan' ? 500 : 200;
+      // Dynamic delay based on type
+      const delay = step.type === 'scan' ? 800 : 400;
 
+      // Update Log
       setLogs(prev => [...prev, `▸ ${step.message}`]);
-      setProgress(((index + 1) / totalSteps) * 100);
+      
+      // Update Progress
+      const currentProgress = ((index + 1) / totalSteps) * 100;
+      setProgress(currentProgress);
+
+      // Next Step
       setTimeout(() => processLog(index + 1), delay);
     };
 
+    // Start sequence
     processLog(0);
+
+    // Cleanup function
+    return () => { isMounted = false; };
+
   }, [systemState]);
 
   // 2. AUTO-SCROLL
@@ -63,7 +89,7 @@ export default function EnginePage() {
     }
   }, [consoleHistory]);
 
-  // 3. COMPILER (Build from Target)
+  // 3. COMPILER
   const runCompiler = async () => {
     setIsCompiling(true);
     setBuildStatus('idle');
@@ -72,11 +98,9 @@ export default function EnginePage() {
     setConsoleHistory(prev => [...prev, "Connecting to target host..."]);
 
     try {
-        // Simulate build time
         await new Promise(r => setTimeout(r, 600));
         setConsoleHistory(prev => [...prev, "Fetching remote manifest..."]);
         
-        // Verify target is reachable
         const response = await fetch(TARGET_HOST, { method: 'HEAD' });
         
         await new Promise(r => setTimeout(r, 600));
@@ -96,8 +120,7 @@ export default function EnginePage() {
         }
 
     } catch (error) {
-        // Note: Fetch might fail due to CORS in browser, but Proxy will still work
-        setConsoleHistory(prev => [...prev, "⚠️ Network Warning: Direct fetch blocked (CORS)."]);
+        setConsoleHistory(prev => [...prev, "⚠️ Network Warning: Direct fetch blocked."]);
         setConsoleHistory(prev => [...prev, "Generating build via Server Proxy..."]);
         await new Promise(r => setTimeout(r, 500));
         setConsoleHistory(prev => [...prev, "✅ Build Complete: ./dist/space.app"]);
@@ -107,14 +130,13 @@ export default function EnginePage() {
     setIsCompiling(false);
   };
 
-  // 4. LAUNCHER (Start Space.app)
+  // 4. LAUNCHER
   const launchApp = () => {
     setConsoleHistory(prev => [...prev, "> start space.app"]);
     setConsoleHistory(prev => [...prev, "Mounting local proxy..."]);
     setConsoleHistory(prev => [...prev, "Executing " + LOCAL_BUILD_PATH + " ..."]);
     
     setTimeout(() => {
-        // Open the local proxied version
         window.open(LOCAL_BUILD_PATH, '_blank');
     }, 800);
   };
@@ -172,7 +194,7 @@ export default function EnginePage() {
           </h1>
           <div className="text-center mt-2">
               <span className="text-sm tracking-[0.3em] animate-pulse text-nexus-magenta">
-                  DIAGNOSTIC MODE
+                  SYSTEM BOOT
               </span>
           </div>
         </div>
@@ -187,7 +209,10 @@ export default function EnginePage() {
           </div>
           <div className="space-y-2">
               <div className="h-2 rounded-full overflow-hidden bg-nexus-cyan/10">
-                  <div className="h-full rounded-full bg-gradient-to-r from-nexus-cyan to-nexus-magenta" style={{ width: `${progress}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-nexus-cyan to-nexus-magenta transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
+              <div className="text-center text-xs font-mono text-gray-500">
+                  {Math.round(progress)}% Complete
               </div>
           </div>
         </div>
@@ -206,7 +231,6 @@ export default function EnginePage() {
           <span className="text-xs font-bold tracking-widest">NEXUS ENGINE v9.0</span>
         </div>
         
-        {/* Action Buttons */}
         <div className="flex items-center gap-3">
             <button 
                 onClick={runCompiler}
@@ -229,14 +253,13 @@ export default function EnginePage() {
       {/* Main Dashboard Grid */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* Left Panel: Stats */}
+        {/* Left Panel */}
         <aside className="w-64 border-r border-nexus-cyan/10 p-4 hidden md:flex flex-col gap-4 bg-[#00101a]">
           <div className="border border-white/10 rounded p-3">
             <div className="text-[10px] text-gray-500 uppercase mb-1">Target Host</div>
             <div className="text-xs text-nexus-cyan truncate">{TARGET_HOST}</div>
           </div>
           
-          {/* Build Status */}
           <div className={`border rounded p-3 ${buildStatus === 'success' ? 'border-green-500/50 bg-green-500/5' : 'border-white/10'}`}>
             <div className="text-[10px] text-gray-500 uppercase mb-1 flex justify-between items-center">
                 <span>Build Output</span>
@@ -251,11 +274,10 @@ export default function EnginePage() {
           </div>
         </aside>
 
-        {/* Right Panel: Terminal */}
+        {/* Terminal */}
         <div className="flex-1 flex flex-col bg-[#000001] relative">
            <div className="absolute inset-0 z-0 grid-bg opacity-20" />
            
-           {/* Output Area */}
            <div ref={terminalRef} className="flex-1 p-4 overflow-y-auto z-10 text-xs leading-relaxed">
              {consoleHistory.map((line, i) => (
                <div key={i} className={`mb-1 ${line.startsWith('>') ? 'text-white' : 'text-nexus-cyan/80'}`}>
@@ -269,7 +291,6 @@ export default function EnginePage() {
              )}
            </div>
 
-           {/* Input Area */}
            <div className="h-10 border-t border-nexus-cyan/20 flex items-center px-4 bg-black/80 z-10">
              <span className="text-nexus-magenta mr-2">$</span>
              <input 
@@ -285,7 +306,6 @@ export default function EnginePage() {
         </div>
       </div>
       
-      {/* CSS */}
       <style jsx global>{`
         .grid-bg {
           background-image: linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
